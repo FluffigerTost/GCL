@@ -142,7 +142,8 @@ void GCL_DrawLine(int x1, int y1, int x2, int y2) {
         }
     }
 }
-void GCL_DrawLineInArray(int x1, int y1, int x2, int y2, bool** screenBuffer) {
+
+static void GCL_DrawLineInArray(int x1, int y1, int x2, int y2, bool** screenBuffer) {
     int xDiff = x2 - x1;
     int yDiff = y2 - y1;
     float k = 0;
@@ -261,6 +262,65 @@ void GCL_DrawTriangle(GCL_Point p1, GCL_Point p2, GCL_Point p3) {
             }
         }
         xFinish:
+    }
+}
+void GCL_DrawCircle(int x, int y, int r, float x_scale) {
+    for (int i = -r; i <= r; i++) {
+        int x_calc = roundf(sqrtf(r * r - i * i) * x_scale);
+        int x_left  = x - x_calc;
+        int x_right = x + x_calc;
+        int x_diff = x_right - x_left;
+
+        char line[x_diff + 1];
+        memset(line,  ' ', sizeof(line));
+        GCL_GotoXY(x_left, y + i);
+        fwrite(line, 1, sizeof(line), stdout);
+
+    }
+}
+void GCL_DrawCircleLines(int x, int y, int r, float x_scale) {
+    for (int i = -r; i <= 0; i++) {
+        int x_calc = roundf(sqrtf(r * r - i * i) * x_scale);
+
+        if (i == r) continue;
+        int x_next =  roundf(sqrtf(r * r - (i + 1) * (i + 1)) * x_scale);
+        int x_diff = abs(x_next - x_calc);
+        if (1) {
+            char line[x_diff];
+            memset(line, ' ', sizeof(line));
+
+            if (x_diff > 0) {
+                GCL_GotoXY(x + x_calc, y - i);
+                fwrite(line, 1, sizeof(line), stdout);
+
+                GCL_GotoXY(x - x_calc - x_diff, y - i);
+                fwrite(line, 1, sizeof(line), stdout);
+
+
+
+                GCL_GotoXY(x + x_calc, y + i);
+                fwrite(line, 1, sizeof(line), stdout);
+
+                GCL_GotoXY(x - x_calc - x_diff, y + i);
+                fwrite(line, 1, sizeof(line), stdout);
+            }
+            else {
+                GCL_GotoXY(x + x_calc, y - i);
+                fwrite(" ", 1, 1, stdout);
+
+                GCL_GotoXY(x - x_calc - 1, y - i);
+                fwrite(" ", 1, 1, stdout);
+
+
+
+                GCL_GotoXY(x + x_calc , y + i);
+                fwrite(" ", 1, 1, stdout);
+
+                GCL_GotoXY(x - x_calc - 1, y + i);
+                fwrite(" ", 1, 1, stdout);
+            }
+
+        }
     }
 }
 
