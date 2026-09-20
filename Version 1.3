@@ -1,0 +1,435 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <math.h>
+#include <string.h>
+#include <windows.h>
+
+
+typedef struct {
+    int x, y;
+}GCL_Point;
+typedef struct {
+    float r;
+    float g;
+    float b;
+    float a;
+}GCL_RGBA;
+#define GCL_RED     (GCL_RGBA){1.0f, 0.0f, 0.0f, 1.0}
+#define GCL_GREEN   (GCL_RGBA){0.0f, 1.0f, 0.0f, 1.0}
+#define GCL_BLUE    (GCL_RGBA){0.0f, 0.0f, 1.0f, 1.0}
+typedef struct {
+    int width;
+    int height;
+    int channels;
+    unsigned char* texture;
+}GCL_Texture;
+int g_rows = 0;
+int g_collums = 0;
+GCL_RGBA g_backgroundColor;
+
+void GCL_HideCursor() {
+    printf("\033[?25l");
+}
+void GCL_ShowCursor() {
+    printf("\033[?25h");
+}
+static bool** g_screenBuffer = nullptr;
+void GCL_InitConsole(int rows, int collums) {
+    g_screenBuffer = malloc((999) * sizeof(bool*));
+    for (int y = 0; y < 999; y++) {
+        g_screenBuffer[y] = malloc((999) * sizeof(bool));
+    }
+
+    g_rows = 999;
+    g_collums = 999;
+    g_backgroundColor = (GCL_RGBA){1.0f, 1.0f, 1.0f, 1.0f};
+
+    printf("\033[8;%d;%dt", collums, rows);
+}
+void GCL_BackgroundColor(GCL_RGBA color) {
+    g_backgroundColor = color;
+}
+void GCL_SetColor(GCL_RGBA color){
+    color.r = color.r * color.a + (g_backgroundColor.r * (1.0f - color.a));
+    color.g = color.g * color.a + (g_backgroundColor.g * (1.0f - color.a));
+    color.b = color.b * color.a + (g_backgroundColor.b * (1.0f - color.a));
+    printf("\033[48;2;%d;%d;%dm", (int)roundf(color.r * 255), (int)roundf(color.g * 255), (int)roundf(color.b * 255));
+}
+void GCL_GotoXY(int x, int y) {
+    printf("\033[%d;%dH", y, x);
+}
+void GCL_ClearBackground(unsigned long timer_millis) {
+    static unsigned long t = 0;
+    bool clearNow = false;
+    if (GetTickCount() - t > timer_millis) {
+        t = GetTickCount();
+        clearNow = true;
+    }
+    if (clearNow) {
+        GCL_GotoXY(1, 1);
+        GCL_SetColor(g_backgroundColor);
+        printf("\033[2J");
+    }
+}
+void GCL_DrawPixel(int x, int y) {
+    GCL_GotoXY(x, y);
+    fwrite(" ", 1, 1, stdout);
+}
+
+void GCL_DrawRectangle(int x, int y, int width, int height) {
+    char recBuffer[width];
+    memset(recBuffer, ' ', sizeof(recBuffer));
+
+    for (int i = 0; i < height; i++) {
+        GCL_GotoXY(x, y + i);
+        fwrite(recBuffer, 1, sizeof(recBuffer), stdout);
+    }
+}
+void GCL_DrawLine(int x1, int y1, int x2, int y2) {
+    int xDiff = x2 - x1;
+    int yDiff = y2 - y1;
+    float k = 0;
+    if (xDiff != 0) {
+        k = (float)yDiff / (float)xDiff;
+    }
+
+    int y = 0;
+    int x = 0;
+    int y_next = 0;
+
+    if (xDiff > 0) {
+        for (int i = 0; i <= xDiff; i++) {
+            x = x1 + i;
+            y = (int)roundf(k * (float)i + (float)y1);
+            GCL_DrawPixel(x, y);
+            if (x == x2) continue;
+
+            y_next = (int)roundf(k * ((float)i + 1.0f) + (float)y1);
+            int y_fix_diff = y_next - y;
+            if (y_fix_diff > 1) {
+                for (int j = 1; j < y_fix_diff; j++) {
+                    GCL_DrawPixel(x + 1, y + j);
+                }
+            }
+            else if (y_fix_diff < -1) {
+                for (int j = -1; j > y_fix_diff; j--) {
+                    GCL_DrawPixel(x + 1, y + j);
+                }
+            }
+        }
+    }
+    else if (xDiff < 0) {
+        for (int i = 0; i >= xDiff; i--) {
+            x = x1 + i;
+            y = (int)roundf(k * (float)i + (float)y1);
+            GCL_DrawPixel(x, y);
+
+            if (x == x2) continue;
+
+            y_next = (int)roundf(k * ((float)i - 1.0f) + (float)y1);
+            int y_fix_diff = y_next - y;
+            if (y_fix_diff > 1) {
+                for (int j = 1; j < y_fix_diff; j++) {
+                    GCL_DrawPixel(x, y + j);
+                }
+            }
+            else if (y_fix_diff < -1) {
+                for (int j = -1; j > y_fix_diff; j--) {
+                    GCL_DrawPixel(x, y + j);
+                }
+            }
+        }
+    }
+    else if (xDiff == 0) {
+        if (yDiff > 0) {
+            for (int i = 0; i <= yDiff; i++) {
+                GCL_DrawPixel(x1, y1 + i);
+            }
+        }
+        else if (yDiff < 0) {
+            for (int i = 0; i >= yDiff; i--) {
+                GCL_DrawPixel(x1, y2 - i);
+            }
+        }
+    }
+}
+
+static void GCL_DrawLineInArray(int x1, int y1, int x2, int y2, bool** screenBuffer) {
+    int xDiff = x2 - x1;
+    int yDiff = y2 - y1;
+    float k = 0;
+    if (xDiff != 0) {
+        k = (float)yDiff / (float)xDiff;
+    }
+
+    int y = 0;
+    int x = 0;
+    int y_next = 0;
+
+    if (xDiff > 0) {
+        for (int i = 0; i <= xDiff; i++) {
+            x = x1 + i;
+            y = (int)roundf(k * (float)i + (float)y1);
+            screenBuffer[y - 1][x - 1] = 1;
+            if (x == x2) continue;
+
+            y_next = (int)roundf(k * ((float)i + 1.0f) + (float)y1);
+            int y_fix_diff = y_next - y;
+            if (y_fix_diff > 1) {
+                for (int j = 1; j < y_fix_diff; j++) {
+                    screenBuffer[y + j - 1][x - 1] = 1;
+                }
+            }
+            else if (y_fix_diff < -1) {
+                for (int j = -1; j > y_fix_diff; j--) {
+                    screenBuffer[y + j - 1][x - 1] = 1;
+                }
+            }
+        }
+    }
+    else if (xDiff < 0) {
+        for (int i = 0; i >= xDiff; i--) {
+            x = x1 + i;
+            y = (int)roundf(k * (float)i + (float)y1);
+            screenBuffer[y - 1][x - 1] = 1;
+
+            if (x == x2) continue;
+
+            y_next = (int)roundf(k * ((float)i - 1.0f) + (float)y1);
+            int y_fix_diff = y_next - y;
+            if (y_fix_diff > 1) {
+                for (int j = 1; j < y_fix_diff; j++) {
+                    screenBuffer[y + j - 1][x - 1] = 1;
+                }
+            }
+            else if (y_fix_diff < -1) {
+                for (int j = -1; j > y_fix_diff; j--) {
+                    screenBuffer[y + j - 1][x - 1] = 1;
+                }
+            }
+        }
+    }
+    else if (xDiff == 0) {
+        if (yDiff > 0) {
+            for (int i = 0; i <= yDiff; i++) {
+                screenBuffer[y1 + i - 1][x1 - 1] = 1;
+            }
+        }
+        else if (yDiff < 0) {
+            for (int i = 0; i >= yDiff; i--) {
+                screenBuffer[y2 - i - 1][x1 - 1] = 1;
+            }
+        }
+    }
+}
+void GCL_DrawTriangle(GCL_Point p1, GCL_Point p2, GCL_Point p3) {
+    for (int y = 0; y < g_collums; y++) {
+        memset(g_screenBuffer[y], 0, g_rows);
+    }
+
+    GCL_DrawLineInArray(p1.x, p1.y, p2.x, p2.y, g_screenBuffer);
+    GCL_DrawLineInArray(p2.x, p2.y, p3.x, p3.y, g_screenBuffer);
+    GCL_DrawLineInArray(p3.x, p3.y, p1.x, p1.y, g_screenBuffer);
+
+    GCL_DrawLine(p1.x, p1.y, p2.x, p2.y);
+    GCL_DrawLine(p2.x, p2.y, p3.x, p3.y);
+    GCL_DrawLine(p3.x, p3.y, p1.x, p1.y);
+
+    int min_x = min(p1.x, min(p2.x, p3.x)) - 1;
+    int max_x = max(p1.x, max(p2.x, p3.x));
+
+    int min_y = min(p1.y, min(p2.y, p3.y)) - 1;
+    int max_y = max(p1.y, max(p2.y, p3.y));
+
+    int screenBuffer_x = 0;
+    int screenBuffer_y = 0;
+    for (int y = 0; y < max_y - min_y; y++) {
+        for (int x = 0; x < max_x - min_x; x++) {
+            screenBuffer_x = min_x + x;
+            screenBuffer_y = min_y + y;
+            if (g_screenBuffer[screenBuffer_y][screenBuffer_x] == true) {
+                GCL_DrawPixel(screenBuffer_x + 1, screenBuffer_y + 1);
+
+                for (int scan_x = screenBuffer_x + 2; scan_x < max_x; scan_x++) {
+                    if (g_screenBuffer[screenBuffer_y][scan_x] == 1 && g_screenBuffer[screenBuffer_y][scan_x - 1] == 0) {
+                        int len = scan_x - (screenBuffer_x) + 1;
+                        char array[len];
+                        memset(array, ' ', len * sizeof(bool));
+                        GCL_GotoXY(screenBuffer_x + 1, screenBuffer_y + 1);
+                        fwrite(array, sizeof(array), 1, stdout);
+                        goto xFinish;
+                    }
+                }
+            }
+        }
+        xFinish:
+    }
+}
+void GCL_DrawCircle(int x, int y, int r, float x_scale) {
+    for (int i = -r; i <= r; i++) {
+        int x_calc = roundf(sqrtf(r * r - i * i) * x_scale);
+        int x_left  = x - x_calc;
+        int x_right = x + x_calc;
+        int x_diff = x_right - x_left;
+
+        char line[x_diff + 1];
+        memset(line,  ' ', sizeof(line));
+        GCL_GotoXY(x_left, y + i);
+        fwrite(line, 1, sizeof(line), stdout);
+    }
+}
+void GCL_DrawCircleInArray(int x, int y, int r, float x_scale, bool** screen_buffer) {
+
+    for (int i = y - r - 1; i <= y + r; i++) {
+        memset(screen_buffer[i], 0, g_rows * sizeof(bool));
+    }
+    for (int i = -r; i <= r; i++) {
+        int x_calc = roundf(sqrtf(r * r - i * i) * x_scale);
+        int x_left  = x - x_calc;
+        int x_right = x + x_calc;
+        int x_diff = x_right - x_left;
+
+
+        memset(&screen_buffer[y + i - 1][x_left - 1], 1, (x_diff + 1) * sizeof(bool));
+    }
+}
+void GCL_DrawCircleGradientToCenter(int x, int y, int r, float x_scale, GCL_RGBA color_border, GCL_RGBA color_center) {
+    GCL_RGBA color_beginning_border = color_border;
+    GCL_RGBA color_beginning_center = color_center;
+
+    GCL_DrawCircleInArray(x, y, r, x_scale, g_screenBuffer);
+
+    for (int yb = y - r - 1; yb <= y; yb++) {
+        for (int xb = x - r * (int)x_scale - 1; xb <= x; xb++) {
+            if (g_screenBuffer[yb][xb] >= 1) {
+                int dx = abs(xb  + 1  - x);
+                int dy = abs(yb + 1 - y);
+                float distance = roundf(sqrtf(dx * dx + dy * dy));
+
+                color_border = color_beginning_border;
+                color_center = color_beginning_center;
+
+                float color_get_lower = distance / ((float)r * x_scale);
+                float color_get_heigher = 1.0f - color_get_lower;
+
+                color_border.r *= color_get_lower;
+                color_border.g *= color_get_lower;
+                color_border.b *= color_get_lower;
+
+
+                color_center.r *= color_get_heigher;
+                color_center.g *= color_get_heigher;
+                color_center.b *= color_get_heigher;
+                color_center.a *= color_get_heigher;
+
+                GCL_RGBA color_final;
+                color_final.r = (color_border.r > color_center.r) ? color_border.r : color_center.r;
+                color_final.g = (color_border.g > color_center.g) ? color_border.g : color_center.g;
+                color_final.b = (color_border.b > color_center.b) ? color_border.b : color_center.b;
+                color_final.a = (color_border.a > color_center.a) ? color_border.a : color_center.a;
+
+                GCL_SetColor(color_final);
+                GCL_DrawPixel(xb + 1, yb + 1);
+                GCL_DrawPixel(xb + 1, yb + (y - yb) * 2 - 1);
+
+                GCL_DrawPixel(xb + (x - xb) * 2 - 1, yb + 1);
+                GCL_DrawPixel(xb + (x - xb) * 2 - 1, yb + (y - yb) * 2 - 1);
+            }
+        }
+    }
+}
+void GCL_DrawCircleLines(int x, int y, int r, float x_scale) {
+    int x_next = 0;
+    int x_calc = 0;
+    for (int i = -r; i <= 0; i++) {
+        x_calc = x_next;
+        x_next =  roundf(sqrtf(r * r - i * i) * x_scale);
+
+        int x_diff = abs(x_next - x_calc);
+
+        char line[x_diff];
+        memset(line, ' ', sizeof(line));
+
+        if (x_diff > 0) {
+            GCL_GotoXY(x + x_calc, y - i);
+            fwrite(line, 1, sizeof(line), stdout);
+
+            GCL_GotoXY(x - x_calc - x_diff + 1, y - i);
+            fwrite(line, 1, sizeof(line), stdout);
+
+
+
+            GCL_GotoXY(x + x_calc, y + i);
+            fwrite(line, 1, sizeof(line), stdout);
+
+            GCL_GotoXY(x - x_calc - x_diff + 1, y + i);
+            fwrite(line, 1, sizeof(line), stdout);
+        }
+        else {
+            GCL_GotoXY(x + x_calc, y - i);
+            fwrite(" ", 1, 1, stdout);
+
+            GCL_GotoXY(x - x_calc, y - i);
+            fwrite(" ", 1, 1, stdout);
+
+
+
+            GCL_GotoXY(x + x_calc , y + i);
+            fwrite(" ", 1, 1, stdout);
+
+            GCL_GotoXY(x - x_calc, y + i);
+            fwrite(" ", 1, 1, stdout);
+        }
+    }
+}
+
+GCL_Texture GCL_LoadTexture(const char* image_name) {
+    GCL_Texture texture;
+    texture.texture = stbi_load(image_name, &texture.width, &texture.height, &texture.channels, 4);
+    return  texture;
+}
+void GCL_DrawTexture(int x, int y, GCL_Texture texture, int average_pixel) {
+    float block = 0;
+    int width = texture.width / average_pixel;
+    int height = texture.height / average_pixel;
+    for (int oy = 0; oy < height; oy++) {
+        for (int ox = 0; ox < width; ox++) {
+            GCL_RGBA avarage = {0};
+            for (int by = 0; by < average_pixel; by++) {
+                for (int bx = 0; bx < average_pixel; bx++) {
+                    int source_x = ox * average_pixel + bx;
+                    int source_y = oy * average_pixel + by;
+                    int idx = (source_y * texture.width + source_x) * 4;
+
+                    avarage.r += texture.texture[idx];
+                    avarage.g += texture.texture[idx + 1];
+                    avarage.b += texture.texture[idx + 2];
+                    avarage.a += texture.texture[idx + 3];
+                }
+            }
+            block = average_pixel * average_pixel;
+            avarage.r /= block;
+            avarage.g /= block;
+            avarage.b /= block;
+            avarage.a /= block;
+
+            avarage.r /= 255.0f;
+            avarage.g /= 255.0f;
+            avarage.b /= 255.0f;
+            avarage.a /= 255.0f;
+
+            GCL_SetColor(avarage);
+            GCL_DrawPixel(x + ox, y + oy);
+        }
+    }
+}
+void GCL_FreeImage(GCL_Texture texture) {
+    free(texture.texture);
+}
+
+void GCL_CleanProgramm() {
+    for (int y = 0; y < g_collums; y++) {
+        free(g_screenBuffer[y]);
+    }
+}
