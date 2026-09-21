@@ -4,6 +4,8 @@
 #include <math.h>
 #include <string.h>
 #include <windows.h>
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 
 
 typedef struct {
@@ -223,6 +225,42 @@ static void GCL_DrawLineInArray(int x1, int y1, int x2, int y2, bool** screenBuf
         }
     }
 }
+void GCL_DrawRectangleGradienLeftToRight(int x, int y, int width, int height, GCL_RGBA color_1, GCL_RGBA color_2) {
+
+    GCL_RGBA color_1_orig = color_1;
+    GCL_RGBA color_2_orig = color_2;
+
+    for (int xs = 1; xs <= width; xs++) {
+        float get_higher = (float)xs / (float)width;
+        float get_lower = 1.0f - (float)xs / (float)width;
+
+        color_1 = color_1_orig;
+        color_2 = color_2_orig;
+
+        color_1.r *= get_lower;
+        color_1.g *= get_lower;
+        color_1.b *= get_lower;
+        color_1.a *= get_lower;
+
+        color_2.r *= get_higher;
+        color_2.g *= get_higher;
+        color_2.b *= get_higher;
+        color_2.a *= get_higher;
+
+        GCL_RGBA final;
+
+        final.r = color_1.r > color_2.r ? color_1.r : color_2.r;
+        final.g = color_1.g > color_2.g ? color_1.g : color_2.g;
+        final.b = color_1.b > color_2.b ? color_1.b : color_2.b;
+        final.a = color_1.a > color_2.a ? color_1.a : color_2.a;
+
+
+        GCL_SetColor(final);
+        for (int ys = 0; ys < height; ys++) {
+            GCL_DrawPixel(x + xs - 1, y + ys);
+        }
+    }
+}
 void GCL_DrawTriangle(GCL_Point p1, GCL_Point p2, GCL_Point p3) {
     for (int y = 0; y < g_collums; y++) {
         memset(g_screenBuffer[y], 0, g_rows);
@@ -300,18 +338,20 @@ void GCL_DrawCircleGradientToCenter(int x, int y, int r, float x_scale, GCL_RGBA
 
     GCL_DrawCircleInArray(x, y, r, x_scale, g_screenBuffer);
 
-    for (int yb = y - r - 1; yb <= y; yb++) {
-        for (int xb = x - r * (int)x_scale - 1; xb <= x; xb++) {
+    for (int yb = y - r - 1; yb <= y - 1; yb++) {
+        for (int xb = x - (int)roundf((float)r * x_scale) - 1; xb <= x; xb++) {
             if (g_screenBuffer[yb][xb] >= 1) {
-                int dx = abs(xb  + 1  - x);
+                int dx = (int)roundf((float)abs(xb  + 1  - x) / x_scale);
                 int dy = abs(yb + 1 - y);
                 float distance = roundf(sqrtf(dx * dx + dy * dy));
 
                 color_border = color_beginning_border;
                 color_center = color_beginning_center;
 
-                float color_get_lower = distance / ((float)r * x_scale);
+                float color_get_lower = distance / (float)r;
+                if (color_get_lower > 1.0f) color_get_lower = 1.0f;
                 float color_get_heigher = 1.0f - color_get_lower;
+                if (color_get_lower < 0.0f) color_get_lower = 0.0f;
 
                 color_border.r *= color_get_lower;
                 color_border.g *= color_get_lower;
@@ -321,13 +361,12 @@ void GCL_DrawCircleGradientToCenter(int x, int y, int r, float x_scale, GCL_RGBA
                 color_center.r *= color_get_heigher;
                 color_center.g *= color_get_heigher;
                 color_center.b *= color_get_heigher;
-                color_center.a *= color_get_heigher;
 
                 GCL_RGBA color_final;
                 color_final.r = (color_border.r > color_center.r) ? color_border.r : color_center.r;
                 color_final.g = (color_border.g > color_center.g) ? color_border.g : color_center.g;
                 color_final.b = (color_border.b > color_center.b) ? color_border.b : color_center.b;
-                color_final.a = (color_border.a > color_center.a) ? color_border.a : color_center.a;
+                color_final.a = 1.0f;
 
                 GCL_SetColor(color_final);
                 GCL_DrawPixel(xb + 1, yb + 1);
